@@ -35,4 +35,4 @@ ffmpeg
 flask-socketio==5.3.7
 opencv-python
 eventlet
-cryptography
+cryptography>=41.0.0,<49
