@@ -67,8 +67,8 @@ class PCPFile(object):
 
     def send_pcp_file(self, campaign_id, commands, cell_id=-1,  number_prints_trigger_prediction = 1, rank_run = 0,
                       accum_h_mu=0.0,
-                      bed_temp = None, print_speed = None, pressure = None,
-                      predict_ranges = None):
+                      bed_temp = None, print_speed = None, pressure = None, auto_clean_abs_x = None, auto_clean_abs_y = None,
+                      predict_ranges = None, is_skip = False):
         metadata = dict()
         metadata['campaign_id'] = campaign_id
         metadata['cell_id'] = cell_id
@@ -78,12 +78,17 @@ class PCPFile(object):
         metadata['number_prints_trigger_prediction'] = number_prints_trigger_prediction
         metadata['data'] = commands
         metadata['predict_ranges'] = predict_ranges
+        metadata['is_skip'] = is_skip
         if bed_temp:
             metadata['bed_temp'] = bed_temp
         if print_speed:
             metadata['print_speed'] = print_speed
         if pressure:
             metadata['pressure'] = pressure
+        if auto_clean_abs_x:
+            metadata['auto_clean_abs_x'] = auto_clean_abs_x
+        if auto_clean_abs_y:
+            metadata['auto_clean_abs_y'] = auto_clean_abs_y
         json_string = json.dumps(metadata)
         print("send pcp file:" + json_string)
         self.status_request.send_message('pcp_file', json_string)

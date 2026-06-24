@@ -207,16 +207,24 @@ def send_pcp_file():
     z_abs_height = None
     if request.form.get('z_abs_height'):
         z_abs_height = float(request.form.get('z_abs_height'))
+    autoclean_x_abs_pos = None
+    if request.form.get('autoclean_x_abs_pos'):
+        autoclean_x_abs_pos = float(request.form.get('autoclean_x_abs_pos'))
+    autoclean_y_abs_pos = None
+    if request.form.get('autoclean_y_abs_pos'):
+        autoclean_y_abs_pos = float(request.form.get('autoclean_y_abs_pos'))
 
     if filename == '' or campaign_name == '':
         return "fail", 400
     print(f'PCP File Name: {filename}')
     path_to_pcp_file = os.path.join(os.getcwd(), 'DevicesManager/pcp', filename)
+    # path_to_pcp_file = os.path.join(os.getcwd(), 'pcp', filename)
     file_content = ""
     with open(path_to_pcp_file, 'r') as file:
         file_content = file.read()
     # save campaign to db
     init_settings = {"bed_temp": bed_temp, "pressure": pressure, "print_speed": print_speed, "z_abs_height": z_abs_height}
+    nozzle_auto_clean_abs_posistions = {"abs_x": autoclean_x_abs_pos, "abs_y": autoclean_y_abs_pos}
     predict_ranges = {"min_bed_temp": min_bed_temp, "max_bed_temp": max_bed_temp,
                       "min_pressure": min_pressure, "max_pressure": max_pressure,
                       "min_speed": min_speed, "max_speed": max_speed,
@@ -224,9 +232,11 @@ def send_pcp_file():
     new_campaign_doc = {"campaignName": campaign_name, "submitter": session['name'],
                         "grid_ncols": grid_ncols, "grid_nrows": grid_nrows,
                         "init_settings": init_settings,
+                        "z_abs_height": z_abs_height,
+                        "nozzle_auto_clean_abs_posistions": nozzle_auto_clean_abs_posistions,
                         "predict_ranges": predict_ranges,
                         "bed_temp": bed_temp, "pressure": pressure,
-                        "print_speed": print_speed, "z_abs_height": z_abs_height,
+                        "print_speed": print_speed, "z_delta_height": None,
                         "max_loops": max_loops, "number_prints_trigger_prediction": number_prints_trigger_prediction,
                         "hue": hue, "saturation": saturation,
                         "value": value,
@@ -270,9 +280,12 @@ def send_pcp_file():
         print(start_point_pos)
 
         # replace parameters
-        file_content = replace_placeholders_content(file_content, bed_temp, pressure, print_speed, z_abs_height)
+        file_content = replace_placeholders_content(file_content, bed_temp, pressure, print_speed, None)
         pcp_commands = start_point_pos + "\r\n" + file_content + "Done\n"
-        pcp_file.send_pcp_file(campaign_id, pcp_commands, int(cell_id), number_prints_trigger_prediction, 0, 0.0, bed_temp, print_speed, pressure, predict_ranges)
+        pcp_file.send_pcp_file(campaign_id, pcp_commands, int(cell_id), number_prints_trigger_prediction, 0, 0.0, bed_temp, print_speed, pressure,
+                               autoclean_x_abs_pos,
+                               autoclean_y_abs_pos,
+                               predict_ranges)
     # for filename in request.form:
     #     print(f'PCP File Name: {filename}')
     #     path_to_pcp_file = os.path.join(os.getcwd(), 'pcp', filename)
