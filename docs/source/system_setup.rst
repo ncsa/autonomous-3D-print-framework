@@ -93,6 +93,7 @@ Follow the steps below to set up and run the SCP system on a new machine or rein
 3. **Create an Admin User in Clowder**
 
    After Clowder is running, create an admin user using the following command:
+   Update network name in the command below to the network name of the clowder container. For example, if the network name is clowder_clowder, then the command should be:
 
    .. code-block:: bash
 
@@ -102,7 +103,7 @@ Follow the steps below to set up and run the SCP system on a new machine or rein
         -e "PASSWORD=testing0909" \
         -e "EMAIL_ADDRESS=admin@test.com" \
         -e "MONGO_URI=mongodb://mongo:27017/clowder" \
-        clowder/init
+        clowder/mongo-init
 
 4. **Restart Docker Compose**
 
