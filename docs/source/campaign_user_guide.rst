@@ -20,7 +20,7 @@ Campaign
 
 After logging in, the web application automatically redirects users to the Campaign page. On the left side, there are navigation tabs for Campaign, Hardware, and Accounts. On the right, since the user is currently on the Campaign page, the page title 'Campaign' is displayed at the top right. Below the title, there are two links: 'Existing Campaigns' and 'New Campaign.' Clicking 'Existing Campaigns' allows users to browse past campaigns, while selecting 'New Campaign' lets them start a new one.
 
-++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+++++++++++++++++++++++++
 Start a New Campaign
 ++++++++++++++++++++++++
 .. image:: _static/newcampaign.png
