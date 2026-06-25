@@ -4,6 +4,11 @@ import random
 import json
 import re
 import time
+import sys
+import os
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utilities.probe_bed import probe_cell_region
 
 # from scripts import clowder
 # from ximea_camera import XimeaCamera
@@ -82,10 +87,45 @@ def send_printing_params(params):
         lulzbot.move(data.get('bed_temp'))
 
 
+PROBE_METADATA_KEYS = (
+    'x_start', 'y_start', 'prnt_shape_x', 'prnt_shape_y', 'spacing_x', 'spacing_y',
+)
+
+
+def probe_metadata_ready(message):
+    return all(message.get(k) is not None for k in PROBE_METADATA_KEYS)
+
+
 def send_pcp_commands(message):
     # if tool is None or lulzbot is None:
     #     return False
     cell_id = message['cell_id']
+    probe_ran = False
+    bed_heated_during_probe = False
+    if cell_id >= 0 and message.get('probe_before_print') and tool and lulzbot:
+        if probe_metadata_ready(message):
+            bed_heated_during_probe = probe_cell_region(
+                lulzbot,
+                message.get('bed_temp'),
+                message['x_start'],
+                message['y_start'],
+                message['prnt_shape_x'],
+                message['prnt_shape_y'],
+                message['spacing_x'],
+                message['spacing_y'],
+            )
+            abs_position_move_printer(
+                message['x_start'],
+                message['y_start'],
+                message.get('z_abs_height'),
+            )
+            probe_ran = True
+        else:
+            print(
+                f"Warning: probe_before_print set for cell #{cell_id} but probe metadata "
+                f"is incomplete; skipping probe step"
+            )
+
     pcp_commands = message['data'].splitlines()
     for cmd in pcp_commands:
         if len(cmd) <= 0:
@@ -128,10 +168,14 @@ def send_pcp_commands(message):
         elif name.startswith("tool"):
             print('tool')
         if name == "axes":
+            if probe_ran and op == "startPoint":
+                continue
             if op == "setPosMode":
                 if tool and lulzbot:
                     lulzbot.setPosMode(params)
             elif op == "move":
+                if bed_heated_during_probe and params and "M190" in params:
+                    continue
                 print("lulzbot.move: " + params)
                 if tool and lulzbot:
                     lulzbot.move(params)

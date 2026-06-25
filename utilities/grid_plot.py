@@ -12,6 +12,16 @@ from ..utilities.grid_cells import GridCells
 
 mpl.use('Agg')
 
+
+def valid_print_shape(shape_x, shape_y):
+    if shape_x is None or shape_y is None:
+        return False
+    try:
+        return float(shape_x) > 0 and float(shape_y) > 0
+    except (TypeError, ValueError):
+        return False
+
+
 class GridPlot(object):
 
     grid_cells = None
@@ -84,6 +94,10 @@ class GridPlot(object):
         return nrows, ncols
 
     def init_plot(self, x_range, y_range, shape_x, shape_y):
+        if not valid_print_shape(shape_x, shape_y):
+            raise ValueError("shape_x and shape_y must be positive numbers")
+        shape_x = float(shape_x)
+        shape_y = float(shape_y)
         self.nrows, self.ncols, _ = self.grid_cells.ExperimentalGrid(shape_x, shape_y)
 
         self.cell_x_starting, self.cell_y_starting, cell_z_starting = self.grid_cells.LocationMaker(self.nrows, self.ncols)

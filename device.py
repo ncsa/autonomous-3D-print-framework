@@ -14,6 +14,7 @@ from .utilities.rabbitMQ.cameraFrames import CameraFrames
 from .utilities.rabbitMQ.pcpFile import PCPFile
 from .utilities.rabbitMQ.printingParams import PrintingParams
 from .utilities.grid_plot import *
+from .utilities.grid_cells import GridCells
 
 from flask_paginate import Pagination, get_page_args
 from .config import Config
@@ -123,7 +124,7 @@ def load_pcp_file():
     data['shape_x'] = shape_x
     data['shape_y'] = shape_y
     data['nrows'], data['ncols'] = grid_plot.get_dimension(shape_x, shape_y)
-    buf = grid_plot.init_plot(282, 582, shape_x, shape_y)
+    buf = grid_plot.init_plot(Config.PRINT_BED_X_SIZE, Config.PRINT_BED_Y_SIZE, shape_x, shape_y)
 
     if is_abs_printing:
         cell_id = grid_plot.calculate_cell_id(x_start_pos, y_start_pos)
@@ -162,6 +163,15 @@ def send_printing_params():
     printing_params.send_printing_params(commands)
 
     return jsonify([]), 200
+
+
+def _optional_form_float(value):
+    if value is None or value == '' or value == 'null':
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 @devicebp.route('/device/run_pcp_file', methods=['POST'])
@@ -214,8 +224,17 @@ def send_pcp_file():
     if request.form.get('autoclean_y_abs_pos'):
         autoclean_y_abs_pos = float(request.form.get('autoclean_y_abs_pos'))
 
+    shape_x = _optional_form_float(request.form.get('shape_x'))
+    shape_y = _optional_form_float(request.form.get('shape_y'))
+
     if filename == '' or campaign_name == '':
         return "fail", 400
+
+    if starting_cell_id != '' and not valid_print_shape(shape_x, shape_y):
+        return jsonify({
+            "error": "Invalid or missing print shape dimensions. Load a PCP file before starting the campaign."
+        }), 400
+
     print(f'PCP File Name: {filename}')
     path_to_pcp_file = os.path.join(os.getcwd(), 'DevicesManager/pcp', filename)
     # path_to_pcp_file = os.path.join(os.getcwd(), 'pcp', filename)
@@ -231,6 +250,7 @@ def send_pcp_file():
                       "min_zheight": min_zheight, "max_zheight": max_zheight}
     new_campaign_doc = {"campaignName": campaign_name, "submitter": session['name'],
                         "grid_ncols": grid_ncols, "grid_nrows": grid_nrows,
+                        "shape_x": shape_x, "shape_y": shape_y,
                         "init_settings": init_settings,
                         "z_abs_height": z_abs_height,
                         "nozzle_auto_clean_abs_posistions": nozzle_auto_clean_abs_posistions,
@@ -271,21 +291,23 @@ def send_pcp_file():
 
         cell_id = int(starting_cell_id)
         abs_x, abs_y = grid_plot.get_top_left_corner_pos_by_cell_id(int(cell_id))
-        X = "\"X=" + str(abs_x)
-        Y = "Y=" + str(abs_y)
-        Z = "Z=21.4" + "\""
-        if z_abs_height:
-            Z = "Z="+str(z_abs_height) + "\""
-        start_point_pos = "axes.startPoint(" + X + " " + Y + " " + Z + ")"
-        print(start_point_pos)
+        cell_z_abs_height = z_abs_height if z_abs_height is not None else Config.DEFAULT_Z_ABS_HEIGHT
 
         # replace parameters
         file_content = replace_placeholders_content(file_content, bed_temp, pressure, print_speed, None)
-        pcp_commands = start_point_pos + "\r\n" + file_content + "Done\n"
+        pcp_commands = file_content + "Done\n"
         pcp_file.send_pcp_file(campaign_id, pcp_commands, int(cell_id), number_prints_trigger_prediction, 0, 0.0, bed_temp, print_speed, pressure,
                                autoclean_x_abs_pos,
                                autoclean_y_abs_pos,
-                               predict_ranges)
+                               predict_ranges,
+                               probe_before_print=True,
+                               x_start=abs_x,
+                               y_start=abs_y,
+                               prnt_shape_x=shape_x,
+                               prnt_shape_y=shape_y,
+                               spacing_x=GridCells.ExpSpacing_x,
+                               spacing_y=GridCells.ExpSpacing_y,
+                               z_abs_height=cell_z_abs_height)
     # for filename in request.form:
     #     print(f'PCP File Name: {filename}')
     #     path_to_pcp_file = os.path.join(os.getcwd(), 'pcp', filename)

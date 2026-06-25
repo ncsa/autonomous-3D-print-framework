@@ -17,6 +17,7 @@ from .utilities.rabbitMQ.cameraFrames import CameraFrames
 from .utilities.rabbitMQ.pcpFile import PCPFile
 from .utilities.rabbitMQ.printingParams import PrintingParams
 from .utilities.grid_plot import *
+from .utilities.grid_cells import GridCells
 
 from flask_paginate import Pagination, get_page_args
 from .config import Config
@@ -223,32 +224,44 @@ def update_cell_color(campaign_id):
                 pressure = campaign.get('pressure')
                 print_speed = campaign.get('print_speed')
                 z_abs_height = campaign.get('z_abs_height')
+                shape_x = campaign.get('shape_x')
+                shape_y = campaign.get('shape_y')
+                cell_z_abs_height = z_abs_height if z_abs_height is not None else Config.DEFAULT_Z_ABS_HEIGHT
 
-                abs_x, abs_y = grid_plot.get_top_left_corner_pos_by_cell_id(int(next_cell_id))
-                X = "\"X=" + str(abs_x)
-                Y = "Y=" + str(abs_y)
-                # Z = "Z=21.4" + "\""
-                if z_abs_height:
-                    Z = "Z="+str(z_abs_height) + "\""
-                start_point_pos = "axes.startPoint(" + X + " " + Y + " " + Z + ")"
-                print(start_point_pos)
-                # replace parameters
-                file_content = replace_placeholders_content(file_content, bed_temp, pressure, print_speed)
-                pcp_commands = start_point_pos + "\r\n" + file_content + "Done\n"
+                if not valid_print_shape(shape_x, shape_y):
+                    print(
+                        f"Campaign {campaign_id} missing valid shape_x/shape_y; "
+                        f"cannot dispatch cell {next_cell_id}"
+                    )
+                else:
+                    grid_plot.init_plot(Config.PRINT_BED_X_SIZE, Config.PRINT_BED_Y_SIZE, shape_x, shape_y)
+                    abs_x, abs_y = grid_plot.get_top_left_corner_pos_by_cell_id(int(next_cell_id))
 
-                autoclean_x_abs_pos = None
-                autoclean_y_abs_pos = None
-                if nozzle_auto_clean_abs_posistions:
-                    autoclean_x_abs_pos = nozzle_auto_clean_abs_posistions.get('abs_x')
-                    autoclean_y_abs_pos = nozzle_auto_clean_abs_posistions.get('abs_y')
-                print(f" next rank_run: {rank_run+1}, is_skip: {is_skip}")
-                print(f" group ranks: {group_ranks}, n_success: {n_success}")
-                pcp_file.send_pcp_file(campaign_id, pcp_commands, int(next_cell_id),
-                                       number_prints_trigger_prediction, rank_run+1, accum_h_mu,
-                                       bed_temp, print_speed, pressure,
-                                       autoclean_x_abs_pos,
-                                       autoclean_y_abs_pos,
-                                       predict_ranges, is_skip)
+                    # replace parameters
+                    file_content = replace_placeholders_content(file_content, bed_temp, pressure, print_speed)
+                    pcp_commands = file_content + "Done\n"
+
+                    autoclean_x_abs_pos = None
+                    autoclean_y_abs_pos = None
+                    if nozzle_auto_clean_abs_posistions:
+                        autoclean_x_abs_pos = nozzle_auto_clean_abs_posistions.get('abs_x')
+                        autoclean_y_abs_pos = nozzle_auto_clean_abs_posistions.get('abs_y')
+                    print(f" next rank_run: {rank_run+1}, is_skip: {is_skip}")
+                    print(f" group ranks: {group_ranks}, n_success: {n_success}")
+                    pcp_file.send_pcp_file(campaign_id, pcp_commands, int(next_cell_id),
+                                           number_prints_trigger_prediction, rank_run+1, accum_h_mu,
+                                           bed_temp, print_speed, pressure,
+                                           autoclean_x_abs_pos,
+                                           autoclean_y_abs_pos,
+                                           predict_ranges, is_skip,
+                                           probe_before_print=True,
+                                           x_start=abs_x,
+                                           y_start=abs_y,
+                                           prnt_shape_x=shape_x,
+                                           prnt_shape_y=shape_y,
+                                           spacing_x=GridCells.ExpSpacing_x,
+                                           spacing_y=GridCells.ExpSpacing_y,
+                                           z_abs_height=cell_z_abs_height)
             except Exception as e:
                 traceback.print_exc()
 

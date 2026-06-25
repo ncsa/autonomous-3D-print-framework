@@ -68,7 +68,10 @@ class PCPFile(object):
     def send_pcp_file(self, campaign_id, commands, cell_id=-1,  number_prints_trigger_prediction = 1, rank_run = 0,
                       accum_h_mu=0.0,
                       bed_temp = None, print_speed = None, pressure = None, auto_clean_abs_x = None, auto_clean_abs_y = None,
-                      predict_ranges = None, is_skip = False):
+                      predict_ranges = None, is_skip = False,
+                      probe_before_print=False, x_start=None, y_start=None,
+                      prnt_shape_x=None, prnt_shape_y=None,
+                      spacing_x=None, spacing_y=None, z_abs_height=None):
         metadata = dict()
         metadata['campaign_id'] = campaign_id
         metadata['cell_id'] = cell_id
@@ -79,16 +82,25 @@ class PCPFile(object):
         metadata['data'] = commands
         metadata['predict_ranges'] = predict_ranges
         metadata['is_skip'] = is_skip
-        if bed_temp:
+        metadata['probe_before_print'] = probe_before_print
+        if bed_temp is not None:
             metadata['bed_temp'] = bed_temp
-        if print_speed:
+        if print_speed is not None:
             metadata['print_speed'] = print_speed
-        if pressure:
+        if pressure is not None:
             metadata['pressure'] = pressure
-        if auto_clean_abs_x:
+        if auto_clean_abs_x is not None:
             metadata['auto_clean_abs_x'] = auto_clean_abs_x
-        if auto_clean_abs_y:
+        if auto_clean_abs_y is not None:
             metadata['auto_clean_abs_y'] = auto_clean_abs_y
+        if probe_before_print:
+            metadata['x_start'] = x_start
+            metadata['y_start'] = y_start
+            metadata['prnt_shape_x'] = prnt_shape_x
+            metadata['prnt_shape_y'] = prnt_shape_y
+            metadata['spacing_x'] = spacing_x
+            metadata['spacing_y'] = spacing_y
+            metadata['z_abs_height'] = z_abs_height
         json_string = json.dumps(metadata)
         print("send pcp file:" + json_string)
         self.status_request.send_message('pcp_file', json_string)
