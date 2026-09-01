@@ -10,10 +10,10 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utilities.probe_bed import probe_cell_region
 
-# from scripts import clowder
-# from ximea_camera import XimeaCamera
-#
-# ximean_cam = XimeaCamera()
+from scripts import clowder
+from ximea_camera import XimeaCamera
+
+ximean_cam = XimeaCamera()
 
 
 # printer position string
@@ -88,7 +88,7 @@ def send_printing_params(params):
 
 
 PROBE_METADATA_KEYS = (
-    'x_start', 'y_start', 'prnt_shape_x', 'prnt_shape_y', 'spacing_x', 'spacing_y',
+    'x_start', 'y_start', 'prnt_shape_x', 'prnt_shape_y',
 )
 
 
@@ -111,8 +111,6 @@ def send_pcp_commands(message):
                 message['y_start'],
                 message['prnt_shape_x'],
                 message['prnt_shape_y'],
-                message['spacing_x'],
-                message['spacing_y'],
             )
             abs_position_move_printer(
                 message['x_start'],
