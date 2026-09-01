@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 import pika
 import random
 import json
@@ -7,15 +8,12 @@ import time
 import sys
 import os
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from utilities.probe_bed import probe_cell_region
-
-from scripts import clowder
+import clowder
 from ximea_camera import XimeaCamera
 
 ximean_cam = XimeaCamera()
 
-
+campaign_id = None
 # printer position string
 printer_start_pos = None
 printer_end_pos = None
@@ -26,17 +24,36 @@ try:
     tool_passed = tool.activate()
     lulzbot = lulzbotTaz6_BP()
     lulzbot_passed = lulzbot.activate()
-    printer_start_pos = lulzbot.move("G28\n")
+    printer_start_pos = lulzbot.move("G28 X\n") #home
+    printer_start_pos = lulzbot.move("G28 Y Z\n") #home
+    #printer_start_pos = lulzbot.move("G29\n") #start probing
+    #printer_start_pos = lulzbot.move("M500\n")#save mesh
     printer_end_pos = printer_start_pos
 except:
     tool = None
     lulzbot = None
     tool_passed = False
     lulzbot_passed = False
+
+if not tool_passed or not lulzbot_passed:
+    print("cannot connect to 3D printer, then exist")
+    sys.exit()
+
 EXCHANGE_NAME = 'devices_manager'
 # parameters = pika.URLParameters('amqp://devicesmanager:password@141.142.216.87/%2F')
-parameters = pika.URLParameters('amqp://guest:guest@localhost/%2F')
-connection = pika.BlockingConnection(parameters)
+# parameters = pika.URLParameters('amqp://guest:guest@10.192.238.46/%2F')
+# connection = pika.BlockingConnection(parameters)
+
+# TODO: Update the credentials and host
+connection_params = pika.ConnectionParameters(
+    host='<TODO: Add RabbitMQ host IP address here.>',
+    virtual_host='/',
+    credentials=pika.PlainCredentials('<TODO: RabbitMQ username here.>', '<TODO: RabbitMQ password here.>'),
+    heartbeat=0,  # Disable heartbeat
+    socket_timeout=60*60  # Timeout after 30 minutes
+)
+connection = pika.BlockingConnection(connection_params)
+
 channel = connection.channel()
 channel.exchange_declare(exchange=EXCHANGE_NAME, exchange_type='direct', durable=True)
 deviceIDs = {'lulzbot':0, 'tool':1}
@@ -48,6 +65,20 @@ def listen_device_status():
         exchange=EXCHANGE_NAME, queue=queue_name, routing_key='device_status')
     channel.basic_consume(
         queue=queue_name, on_message_callback=on_request, auto_ack=True)
+#Listerner I added (removed first one):
+def listen_manual_gcode():
+    queue_name = "manual_gcode_queue"
+    channel.queue_declare(queue=queue_name, durable=True)
+    channel.queue_bind(
+        exchange=EXCHANGE_NAME,
+        queue=queue_name,
+        routing_key='manual_gcode'
+    )
+    channel.basic_consume(
+        queue=queue_name,
+        on_message_callback=on_request,
+        auto_ack=True
+    )
 def listen_device_activate_deactivate():
     queue_name = "device_activate_deactivate_queue"
     channel.queue_declare(queue=queue_name, durable=True)
@@ -87,6 +118,28 @@ def send_printing_params(params):
         lulzbot.move(data.get('bed_temp'))
 
 
+def probe_cell_region(lulzbot, bed_temp, x_start, y_start,
+                      prnt_shape_x, prnt_shape_y):
+    """
+    Heat the bed to experiment temperature and probe the print footprint before printing.
+    y_start is the cell top-left (back) corner; the print extends toward front (-Y),
+    so G29 Front = y_start - prnt_shape_y and Back = y_start.
+    Returns True if the bed was heated as part of this step.
+    """
+    bed_heated = False
+    if bed_temp is not None:
+        lulzbot.move(f"M190 R{bed_temp}\n")
+        lulzbot.move("M400\n")
+        bed_heated = True
+    lulzbot.setPosMode("absolute")
+    lulzbot.move(
+        f"G29 L{x_start} R{x_start + prnt_shape_x} "
+        f"F{y_start - prnt_shape_y} B{y_start}\n"
+    )
+    lulzbot.move("M400\n")
+    return bed_heated
+
+
 PROBE_METADATA_KEYS = (
     'x_start', 'y_start', 'prnt_shape_x', 'prnt_shape_y',
 )
@@ -100,9 +153,25 @@ def send_pcp_commands(message):
     # if tool is None or lulzbot is None:
     #     return False
     cell_id = message['cell_id']
+    campaign_id = message.get('campaign_id')
+    rank_run = message.get('rank_run')
+    accum_h_mu = message.get('accum_h_mu')
+    number_prints_trigger_prediction = message.get('number_prints_trigger_prediction')
+    bed_temp = message.get('bed_temp')
+    pressure = message.get('pressure')
+    print_speed = message.get('print_speed')
+    predict_ranges = message.get('predict_ranges')
+    pcp_commands = message['data'].splitlines()
+    is_skip = message.get('is_skip')
+    dataset_id = clowder.get_or_create_dataset(campaign_id)
+    folder_id = clowder.get_or_create_folders(dataset_id, "frames")
+    
+    auto_clean_abs_x = message.get('auto_clean_abs_x')
+    auto_clean_abs_y = message.get('auto_clean_abs_y')
+
     probe_ran = False
     bed_heated_during_probe = False
-    if cell_id >= 0 and message.get('probe_before_print') and tool and lulzbot:
+    if cell_id >= 0 and tool and lulzbot:
         if probe_metadata_ready(message):
             bed_heated_during_probe = probe_cell_region(
                 lulzbot,
@@ -120,27 +189,59 @@ def send_pcp_commands(message):
             probe_ran = True
         else:
             print(
-                f"Warning: probe_before_print set for cell #{cell_id} but probe metadata "
-                f"is incomplete; skipping probe step"
+                f"Warning: cell #{cell_id} missing probe metadata "
+                f"({', '.join(PROBE_METADATA_KEYS)}); skipping probe step"
             )
 
-    pcp_commands = message['data'].splitlines()
+    # set initial parameters for this cell printing
+    if bed_temp and not bed_heated_during_probe:
+        print("set bed temp to {}".format(bed_temp))
+        cmd = "M190 R("+str(bed_temp)+")\n"
+        lulzbot.move(cmd)
+        lulzbot.move("M400\n")
+        time.sleep(2)
+    if pressure:
+        print("set pressure to {}".format(pressure))
+        cmd = "P("+str(pressure)+")\n"
+        tool.setValue(cmd)
+        lulzbot.move("M400\n")
+        time.sleep(2)
+    if print_speed:
+        print("set print_speed to {}".format(print_speed))
+        cmd = "G1 F(" + str(print_speed) + ")\n"
+        lulzbot.move(cmd)
+        lulzbot.move("M400\n")
+        time.sleep(2)
+    
     for cmd in pcp_commands:
         if len(cmd) <= 0:
             continue
         print(cmd)
         cmd = cmd.replace("\\n", "\n")
         if cmd == "Done":
+            # move camera to position
+            print("send G90++++++++++++++++++++++++++++")
+            lulzbot.setPosMode("absolute")
+            print("send G90~~~~~~~~~~~~~~~~~~~~~~")
+            lulzbot.move("G1 Z57 F200\n")
             lulzbot.move("M400\n")
-            time.sleep(5)
-            print(f"Cell #{cell_id} PCP running is done")
-            send_message('printer_movement_done', json.dumps({'cell_id': cell_id}))
+            lulzbot.setPosMode("relative")
+            lulzbot.move("G1 F400 X-63 Y6\n")
+            lulzbot.move("M400\n")
+            time.sleep(20)
+            print(f"Cell #{campaign_id}: {cell_id} PCP running is done")
+            send_message('printer_movement_done', json.dumps(
+                {'cell_id': cell_id, 'campaign_id': campaign_id,
+                 'rank_run': rank_run,
+                 'number_prints_trigger_prediction': number_prints_trigger_prediction}))
             # ximea camera frame
+            ximean_cam = XimeaCamera()
             filename = ximean_cam.take_frame()
-            # send to clowder
-            clowder.upload_a_file_to_dataset(filename)
+            # # send to clowder
+            clowder.upload_a_file_to_dataset(filename, dataset_id, folder_id, campaign_id, cell_id,
+                number_prints_trigger_prediction, rank_run, accum_h_mu, predict_ranges, is_skip)
             # TODO: assume do cleanup after every pcp file print
-            clean_nozzle()
+            clean_nozzle(auto_clean_abs_x, auto_clean_abs_y)
             break
         tmp = cmd.split("(")
         command = tmp[0].split(".")
@@ -233,6 +334,22 @@ def on_request(ch, method, props, body):
     elif type == 'printing_params':
         send_printing_params(message)
         status = "OK"
+    elif type == 'manual_gcode':
+        gcode = message.get('data')
+        print(f"Recieved manual G-code: {gcode}")
+
+        if lulzbot is not None:
+            try:
+                response = lulzbot.move(gcode + "\n")
+                cur_pos = lulzbot.move("M114\n")
+
+                status = dict()
+                status["pos"] = cur_pos
+                send_message('printer_movement',json.dumps(status))
+
+                print(f"Sent to LulzBot: {gcode}")
+            except Exception as e:
+                print(f"failed to send G-code to LulzBot: {e}")
     elif type == 'activate':
         if message['data'] == 'tool':
             if tool is not None:
@@ -295,6 +412,7 @@ def abs_position_move_printer(x_pos = None, y_pos = None, z_pos = None):
         is_y_delta = True
         cur_y_pos = float(match.group(1))
     is_z_delta = False
+    cur_z_pos = None
     match = re.search(r'Z:([-]?[0-9.]+)', cur_pos)
     if match:
         is_z_delta = True
@@ -318,14 +436,40 @@ def abs_position_move_printer(x_pos = None, y_pos = None, z_pos = None):
             cmd = "G1"
             cmd = cmd + " F2000 Z%s\n" % str(delta_z)
             lulzbot.move(cmd)
-def clean_nozzle():
-    abs_position_move_printer(z_pos=290)
-    abs_position_move_printer(x_pos=-22, y_pos=20)
-    abs_position_move_printer(z_pos=40)
+def clean_nozzle(auto_clean_abs_x, auto_clean_abs_y):
+    # abs_position_move_printer(z_pos=80)
+    # abs_position_move_printer(x_pos=-22, y_pos=20)
+    # abs_position_move_printer(z_pos=40)
+    # lulzbot.move("M400\n")
+    # time.sleep(5)
+    # abs_position_move_printer(z_pos=100)
+    print(f"clean_nozzle: auto_clean_abs_x: {auto_clean_abs_x}, auto_clean_abs_y: {auto_clean_abs_y}")
+    lulzbot.setPosMode("absolute")
+    #-------------------------Move UP first to not bump into cleaning station
+    lulzbot.move("G1 Z80 F1000\n")
+    lulzbot.move("M400\n")
+    auto_clean_abs = "G1 X" + str(auto_clean_abs_x) + " Y" + str(auto_clean_abs_y)+ "\n"
+    #------------------------------------------------Move to cleaning station
+    print("move nozzle clean to pos: " + auto_clean_abs)
+    lulzbot.move(auto_clean_abs)
+    # lulzbot.move("G1 X3.5 Y106.4\n")
+    lulzbot.move("M400\n")
+    #-----------------------------------------------------Put nozzle in place
+    lulzbot.move("G1 Z57.6 F100\n")
+    lulzbot.move("M400\n")
+    #-------------------------------------------------ACTUAL CLEANING PORTION
+    time.sleep(5) #------wait a few seconds
+    lulzbot.move("G2 I0.1 J0.1 F60\n") #----SMALL and SLOW circle
     lulzbot.move("M400\n")
     time.sleep(5)
-    abs_position_move_printer(z_pos=290)
+    lulzbot.move("G2 I0.2 J0.2 F85\n") #---Slightly BIGGER and FASTER circle
+    lulzbot.move("M400\n")
+    #------------------------------Move Up
+    lulzbot.move("G1 Z100 F2000\n")
+    lulzbot.move("M400\n")
+    lulzbot.setPosMode("relative")
     print("nozzle has been cleaned")
+    
 # mimic the print and then clean nozzle and then print anther shape
 # abs_position_move_printer(100, 200, 200)
 # clean_nozzle()
@@ -340,5 +484,7 @@ listen_device_status()
 listen_pcp_commands()
 listen_printing_params()
 listen_device_activate_deactivate()
+listen_manual_gcode()
+
 print(" [x] Adaptor starting")
 channel.start_consuming()

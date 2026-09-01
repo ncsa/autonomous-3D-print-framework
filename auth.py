@@ -25,7 +25,6 @@ info = {"client_id": Config.CLIENT_ID, "client_secret": Config.CLIENT_SECRET, "r
 client_reg = RegistrationResponse(**info)
 # client.store_registration_info(client_reg)
 
-
 def check_login(view):
     @functools.wraps(view)
     def wrapped_view(**kwargs):
@@ -89,22 +88,22 @@ def role_required(role):
 
 def login_db(username, password, error):
     user = find_one(current_app.config['ACCOUNTS_COLLECTION'], condition={"username": username})
-
     if not user:
         error = 'Incorrect username.'
-    # elif not check_password_hash(user['password_hash'], password):
-    #     error = 'Incorrect password.'
+    elif not check_password_hash(user['password'], password):
+        error = 'Incorrect password.'
     else:
         session["access"] = "user"
         session['user_id'] = username
         session['admin'] = username
         session["name"] = username
+        session['isAdmin'] = user.get('is_admin')
         # if error is None:
         #     session.clear()
         #     session['user_id'] = str(user['_id'])
         return redirect(url_for('management.home', title='Campaigns'))
-    flash(error)
-    return False
+    flash('❌ Invalid username or password!', 'error')
+    return redirect(url_for('home.home'))
 
 
 def login_ldap(username, password, error):

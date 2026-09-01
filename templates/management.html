@@ -35,7 +35,9 @@
       {% endfor %}
     {% for key, value in allsources.items() %}
     {% if key == "Accounts" %}
-      <a class="nav-link calendar-event-text" id="v-pills-school-tab" href="{{url_for('management.accounts')}}" role="tab" aria-selected="true">Accounts</a>
+        {% if isAdmin %}
+            <a class="nav-link calendar-event-text" id="v-pills-school-tab" href="{{url_for('management.accounts')}}" role="tab" aria-selected="true">Accounts</a>
+        {% endif %}
     {% endif %}
     {% endfor %}
         {#      <a class="nav-link calendar-event-text" id="v-pills-school-tab" href="{{url_for('management.settings')}}" role="tab" aria-selected="true">Settings</a>#}

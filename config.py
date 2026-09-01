@@ -26,9 +26,11 @@ load_dotenv()
 class Config(object):
     INTERNAL_HOST_URL = os.getenv('INTERNAL_HOST_URL', 'http://localhost:5000/')
     PRINT_BED_X_SIZE = int(os.getenv("PRINT_BED_X_SIZE", 282))
-    PRINT_BED_Y_SIZE = int(os.getenv("PRINT_BED_X_SIZE", 582))
+    PRINT_BED_Y_SIZE = int(os.getenv("PRINT_BED_Y_SIZE", 582))
+    DEFAULT_Z_ABS_HEIGHT = float(os.getenv("DEFAULT_Z_ABS_HEIGHT", 21.4)) # Default height above the z-axis to print
+
     # RABBITMQ_URI =  os.getenv('RABBITMQ_URI', 'amqp://devicesmanager:password@141.142.216.87/%2F?heartbeat=600')
-    RABBITMQ_URI = os.getenv('RABBITMQ_URI', 'amqp://guest:guest@10.192.238.46/%2F?heartbeat=600')
+    RABBITMQ_URI = os.getenv('RABBITMQ_URI', 'amqp://guest:guest@localhost/%2F?heartbeat=600')
     # MONGO_URL to setup connection with target mongoDB
     MONGO_URL = os.getenv('MONGO_URL', 'mongodb://localhost:27017')
     # MONGO_DATABASE refers to the mongoDB's database that we are about to access to
