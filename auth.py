@@ -2,7 +2,7 @@ import functools
 from bson.objectid import ObjectId
 import ldap
 from flask import (
-    Blueprint, flash, g, redirect, render_template, request, session, url_for, current_app, abort
+    Blueprint, flash, g, redirect, render_template, request, session, url_for, current_app
 )
 from oic import rndstr
 from oic.oic import Client
@@ -103,7 +103,6 @@ def login_db(username, password, error):
         #     session['user_id'] = str(user['_id'])
         return redirect(url_for('management.home', title='Campaigns'))
     flash('❌ Invalid username or password!', 'error')
-    abort(500, description="Invalid username or password!")
     return redirect(url_for('home.home'))
 
 
